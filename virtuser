@@ -1,13 +1,14 @@
+#!/usr/bin/env python3
 import os
 import os.path
 from subprocess import Popen, PIPE
 import sys
 from threading import Thread
-from typing import ContextManager
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
 import venv
 from pathlib import Path
+import shutil
 
 class ExtendedEnvBuilder(venv.EnvBuilder):
     """
@@ -38,6 +39,7 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
         self.nopip = kwargs.pop('nopip', False)
         self.progress = kwargs.pop('progress', None)
         self.verbose = kwargs.pop('verbose', False)
+        self.install_file = kwargs.pop('install_file', False)
         super().__init__(*args, **kwargs)
 
     # def replace_variables(self, text: str, context) -> str:
@@ -56,10 +58,22 @@ class ExtendedEnvBuilder(venv.EnvBuilder):
         home_dir = Path(f"{context.env_dir}/home/{context.env_name}-{os.environ['USER']}") 
         home_dir.mkdir(parents=True, exist_ok=True)
         with open(context.bin_path + "/activate.fish", "a") as activate_fish:
-            activate_fish.write(f"virtuser2.py bash {context.env_dir}/home/{context.env_name}-{os.environ['USER']}\n")
+            activate_fish.write(f"virtuser2.py bash {context.env_dir}/home/{context.env_name}-{os.environ['USER']} {context.env_dir}/home/{context.env_name}-{os.environ['USER']}/install.sh\n")
             activate_fish.write(f"deactivate\n")
         with open(Path(home_dir / ".bashrc"), "w+") as bashrc:
-            bashrc.write(f"export PS1=\"{context.env_name}-$PS1\"") 
+            bashrc.write(f"export PS1=\"{context.env_name}-$PS1\"")
+            bashrc.write(f"""
+if [[ -f {home_dir}/install.sh ]]; then
+    rm {home_dir}/install.sh
+fi
+cd {home_dir}
+""")
+
+        shutil.copy("/PROJECTS/PYTHON/virtuser/virtuser2.py",Path(f"{context.env_dir}/bin/"))
+
+        if self.install_file:
+            install_file_path = Path(self.install_file)
+            shutil.copy(install_file_path, home_dir / Path("install.sh"))
 
         # Path.mkdir(str(context.env_dir) + "/home", exist_ok=True)
         # os.environ['HOME'] = str(context.env_dir) + "/home"
@@ -182,6 +196,8 @@ def main(args=None):
                             action='store_true', dest='system_site',
                             help='Give the virtual environment access to the '
                                  'system site-packages dir.')
+        parser.add_argument('--install-script', dest='install_file', help="Install script when new user is started")
+        
         if os.name == 'nt':
             use_symlinks = False
         else:
@@ -217,7 +233,8 @@ def main(args=None):
                                        upgrade=options.upgrade,
                                        nodist=options.nodist,
                                        nopip=options.nopip,
-                                       verbose=options.verbose)
+                                       verbose=options.verbose,
+                                       install_file=options.install_file)
         for d in options.dirs:
             builder.create(d)
 
