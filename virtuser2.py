@@ -9,6 +9,12 @@ shell_cmd = sys.argv[1]
 home_path = sys.argv[2]
 install_file = sys.argv[3]
 
+def getPATH(env: dict) -> str:
+    path_list = []
+    if 'PATH' in env:
+        paths = str(env['PATH']).split(':')
+        for p in paths:
+            path_list.append()
 
 def getDefaultEnv(vars: list) -> dict:
     user_env = os.environ.copy()
@@ -19,7 +25,8 @@ def getDefaultEnv(vars: list) -> dict:
             env[var] = user_env[var]
 
     env["HOME"] = home_path
-    env["HOME_VIRT"] = home_path 
+    env["HOME_VIRT"] = home_path
+    
     return env
 
 # SHELL=/bin/bash
@@ -48,8 +55,6 @@ def getDefaultEnv(vars: list) -> dict:
 # LC_NUMERIC=es_AR.UTF-8
 # OLDPWD=/home/ericson
 
-
-
 env = getDefaultEnv([
     'SHELL',
     'COLORTERM',
@@ -73,7 +78,9 @@ env = getDefaultEnv([
     'LC_MEASUREMENT',
     'LC_TIME',
     'SUDO_UID',
-    'LC_NUMERIC'
+    'LC_NUMERIC',
+    '_OLD_VIRTUAL_PATH',
+    'VIRTUAL_ENV'
 ])
 
 if Path(f"{home_path}/install.sh").exists():
