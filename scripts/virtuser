@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+import os
+import os.path
+import stat
+import sys
+import venv
+from pathlib import Path
+import shutil
+import importlib.resources as pkg_resources
+from virtuser import templates
+
+SHELL_BASH = "bash"
+SHELL_FISH = "fish"
+SHELL_ZSH = "zsh"
+
+class ExtendedEnvBuilder(venv.EnvBuilder):
+
+    def __init__(self, *args, **kwargs):
+        self.init_file = kwargs.pop('init_file', False)
+        self.shell = kwargs.pop('shell', SHELL_BASH)
+        super().__init__(*args, **kwargs)
+
+    def _append_virtuser_script(self, activate_file, shell, home):
+        print("Write activate")
+        activate_file.write(f"\nvirtuser-start {shell} {home}\n")
+        activate_file.write(f"deactivate\n")
+
+    def _create_basic_start(self, context, home_dir):
+        if self.shell == SHELL_BASH:
+            with open(Path(home_dir / ".bashrc"), "w+") as bashrc:
+                bashrc.write(f"export PS1=\"({context.env_name})$PS1\"\n")
+                bashrc.write(f"cd {home_dir}\n")
+                
+        elif self.shell == SHELL_FISH:
+            # Create $HOME/.config/fish
+            config_fish = Path(home_dir / Path(".config/fish"))
+            config_fish.mkdir(parents=True, exist_ok=True)
+            # Create XDG_CONFIG_HOME/fish/
+            config_fish = Path(home_dir / Path("fish"))
+            config_fish.mkdir(parents=True, exist_ok=True)
+            with open(Path(home_dir / Path(".config/fish/config.fish")), "w+") as config_fish:
+                config_fish.write(f"cd {home_dir}\n")
+
+            with open(Path(home_dir / Path("fish/config.fish")), "w+") as config_fish:
+                config_fish.write(f"cd {home_dir}\n")
+
+        elif self.shell == SHELL_ZSH:
+            with open(Path(home_dir / Path(".zshenv")), "w+") as zshenv:
+                zshenv.write(f"cd {home_dir}\n")
+
+
+    def post_setup(self, context):
+        """
+        Set up any packages which need to be pre-installed into the
+        virtual environment being created.
+
+        :param context: The information for the virtual environment
+                        creation request being processed.
+        """
+        print("Post Setup")
+        print(context)
+
+        ## Create home directory 
+        home_dir = Path(f"{context.env_dir}/home/{context.env_name}-{os.environ['USER']}")
+        home_dir.mkdir(parents=True, exist_ok=True)
+
+        ## Add script to activates
+        shell = self.shell
+        home = f"{context.env_dir}/home/{context.env_name}-{os.environ['USER']}"
+        # install = f"{context.env_dir}/home/{context.env_name}-{os.environ['USER']}/install{init_file_path.suffix}"
+        with open(context.bin_path + "/activate.fish", "a") as activate:
+            self._append_virtuser_script(activate, shell, home)
+
+        with open(context.bin_path + "/activate", "a") as activate:
+            self._append_virtuser_script(activate, shell, home)
+        
+        ## Create basic started by shell
+        self._create_basic_start(context, home_dir)
+
+        ## Copy virtuser-start
+        template = pkg_resources.read_text(templates, 'virtuser-start')
+        virtuser_start = Path(f"{context.env_dir}/bin/virtuser-start")
+        with open(virtuser_start, "w+") as script:
+            script.write(template)
+        st = os.stat(virtuser_start)   
+        os.chmod(virtuser_start, st.st_mode | stat.S_IEXEC)
+        
+        ## Copy init file
+        if self.init_file:
+            print(self.init_file)
+            init_file_path = Path(self.init_file)
+            output_file = home_dir / ( "install" + init_file_path.suffix ) 
+            print(f"cp {init_file_path} {output_file}")
+            shutil.copy(init_file_path, output_file)
+
+
+def main(args=None):
+    compatible = True
+    if sys.version_info < (3, 3):
+        compatible = False
+    elif not hasattr(sys, 'base_prefix'):
+        compatible = False
+    if not compatible:
+        raise ValueError('This script is only for use with Python >= 3.3')
+    else:
+        import argparse
+
+        parser = argparse.ArgumentParser(prog=__name__,
+                                         description='Creates virtual Python '
+                                                     'environments in one or '
+                                                     'more target '
+                                                     'directories.',
+                                         epilog='Once an environment has been '
+                                                'created, you may wish to '
+                                                'activate it, e.g. by '
+                                                'sourcing an activate script '
+                                                'in its bin directory.')
+        parser.add_argument('dirs', metavar='ENV_DIR', nargs='+',
+                            help='A directory to create the environment in.')
+        parser.add_argument('--system-site-packages', default=False,
+                            action='store_true', dest='system_site',
+                            help='Give the virtual environment access to the '
+                                 'system site-packages dir.')
+        if os.name == 'nt':
+            use_symlinks = False
+        else:
+            use_symlinks = True
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--symlinks', default=use_symlinks,
+                           action='store_true', dest='symlinks',
+                           help='Try to use symlinks rather than copies, '
+                                'when symlinks are not the default for '
+                                'the platform.')
+        group.add_argument('--copies', default=not use_symlinks,
+                           action='store_false', dest='symlinks',
+                           help='Try to use copies rather than symlinks, '
+                                'even when symlinks are the default for '
+                                'the platform.')
+        parser.add_argument('--clear', default=False, action='store_true',
+                            dest='clear', help='Delete the contents of the '
+                                               'environment directory if it '
+                                               'already exists, before '
+                                               'environment creation.')
+        parser.add_argument('--upgrade', default=False, action='store_true',
+                            dest='upgrade', help='Upgrade the environment '
+                            'directory to use this version '
+                            'of Python, assuming Python '
+                            'has been upgraded in-place.')
+        parser.add_argument('--without-pip', dest='with_pip',
+                            default=True, action='store_false',
+                            help='Skips installing or upgrading pip in the '
+                                 'virtual environment (pip is bootstrapped '
+                                 'by default)')
+        parser.add_argument('--prompt',
+                            help='Provides an alternative prompt prefix for '
+                                 'this environment.')
+
+        parser.add_argument('--init-file', dest='init_file',
+                            help="Init script, it's copy in virtual home directory")
+
+        parser.add_argument('--shell', dest="shell", help="Select shell for virtual user", default=SHELL_BASH, choices=[SHELL_BASH, SHELL_FISH, SHELL_ZSH])
+
+        options = parser.parse_args(args)
+        if options.upgrade and options.clear:
+            raise ValueError(
+                'you cannot supply --upgrade and --clear together.')
+        builder = ExtendedEnvBuilder(system_site_packages=options.system_site,
+                                     clear=options.clear,
+                                     symlinks=options.symlinks,
+                                     upgrade=options.upgrade,
+                                     with_pip=options.with_pip,
+                                     prompt=options.prompt,
+                                     init_file=options.init_file,
+                                     shell=options.shell)
+        for d in options.dirs:
+            builder.create(d)
+
+
+if __name__ == '__main__':
+    rc = 1
+    try:
+        main()
+        rc = 0
+    except Exception as e:
+        print('Error: %s' % e, file=sys.stderr)
+    sys.exit(rc)

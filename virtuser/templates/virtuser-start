@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+
+import subprocess
+import os
+import sys
+
+shell_cmd = sys.argv[1]
+home_path = sys.argv[2]
+
+def getPATH(env: dict) -> str:
+    path_list = []
+    if 'PATH' in env and 'USER' in env:
+        paths = str(env['PATH']).split(':')
+        for p in paths:
+            if not env['USER'] in p:
+                path_list.append(p)
+    return ':'.join(path_list)
+
+
+def getDefaultEnv(vars: list) -> dict:
+    user_env = os.environ.copy()
+    env = {}
+
+    for var in vars:
+        if var in user_env:
+            env[var] = user_env[var]
+
+    env["HOME"] = home_path
+    env["HOME_VIRT"] = home_path
+    env["XDG_CONFIG_HOME"] = home_path
+    env['PATH'] = getPATH(user_env)
+    return env
+
+env = getDefaultEnv([
+    'SHELL',
+    'COLORTERM',
+    'SUDO_GID',
+    'LC_ADDRESS',
+    'LC_NAME',
+    'LC_MONETARY',
+    'SUDO_USER',
+    'LOGNAME',
+    'XAUTHORITY',
+    'LC_PAPER',
+    'LANG',
+    'LS_COLORS',
+    'LESSCLOSE',
+    'TERM',
+    'LC_IDENTIFICATION',
+    'LESSOPEN',
+    'DISPLAY',
+    'SHLVL',
+    'LC_TELEPHONE',
+    'LC_MEASUREMENT',
+    'LC_TIME',
+    'SUDO_UID',
+    'LC_NUMERIC',
+    '_OLD_VIRTUAL_PATH',
+    'VIRTUAL_ENV'
+])
+
+print(f"virtuser: {home_path}")
+
+subprocess.call([shell_cmd], env=env)
